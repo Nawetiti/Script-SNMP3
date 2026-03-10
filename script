@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# ==============================================================================
+# SCRIPT D'INSTALLATION AUTOMATIQUE SNMPv3 (MÉTHODE MODERNE)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. PARAMÈTRES (Modifie ces valeurs - ATTENTION : 8 caractères minimum !)
+# ------------------------------------------------------------------------------
+SNMP_USER="admin_snmp"
+SNMP_AUTH_PASS="AuthPassword123"  # Minimum 8 caractères
+SNMP_PRIV_PASS="PrivPassword123"  # Minimum 8 caractères
+
+# Vérification des droits root
+if [ "$EUID" -ne 0 ]; then
+  echo "Erreur : Ce script doit être exécuté en tant que root (utilise sudo)."
+  exit 1
+fi
+
+echo "=> Début de l'installation moderne de SNMPv3..."
+
+# ------------------------------------------------------------------------------
+# 2. INSTALLATION DES PAQUETS
+# ------------------------------------------------------------------------------
+echo "=> Mise à jour des dépôts et installation de snmp et snmpd..."
+apt-get update
+apt-get install -y snmp snmpd libsnmp-dev
+
+# ------------------------------------------------------------------------------
+# 3. ARRÊT DU SERVICE ET CRÉATION DE L'UTILISATEUR
+# ------------------------------------------------------------------------------
+echo "=> Arrêt du service snmpd..."
+systemctl stop snmpd
+
+# L'outil net-snmp-create-v3-user configure automatiquement les fichiers de façon sécurisée.
+# -ro (Read-Only), -a SHA (Authentification), -x AES (Chiffrement)
+echo "=> Création de l'utilisateur SNMPv3 sécurisé ($SNMP_USER) avec SHA et AES..."
+net-snmp-create-v3-user -ro -a SHA -A "$SNMP_AUTH_PASS" -x AES -X "$SNMP_PRIV_PASS" "$SNMP_USER"
+
+# ------------------------------------------------------------------------------
+# 4. CONFIGURATION DE L'ÉCOUTE RÉSEAU
+# ------------------------------------------------------------------------------
+echo "=> Configuration de l'écoute sur toutes les interfaces..."
+CONF_FILE="/etc/snmp/snmpd.conf"
+cp $CONF_FILE "${CONF_FILE}.bak"
+
+# Désactiver l'écoute locale stricte (127.0.0.1)
+sed -i 's/^agentAddress  udp:127.0.0.1:161/#agentAddress  udp:127.0.0.1:161/g' $CONF_FILE
+
+# Activer l'écoute sur toutes les interfaces (IPv4 et IPv6)
+sed -i 's/^#agentAddress udp:161,udp6:\[::1\]:161/agentAddress udp:161,udp6:\[::1\]:161/g' $CONF_FILE
+
+# ------------------------------------------------------------------------------
+# 5. DÉMARRAGE ET ACTIVATION DU SERVICE
+# ------------------------------------------------------------------------------
+echo "=> Démarrage du service snmpd..."
+systemctl start snmpd
+systemctl enable snmpd # S'assure que le service démarre au boot
+
+# ------------------------------------------------------------------------------
+# 6. TEST DE LA CONFIGURATION
+# ------------------------------------------------------------------------------
+echo "=> Test de la configuration locale en cours..."
+sleep 2
+
+# Test avec la commande snmpwalk utilisant les standards modernes (SHA + AES)
+snmpwalk -v3 -u "$SNMP_USER" -l authPriv -a SHA -A "$SNMP_AUTH_PASS" -x AES -X "$SNMP_PRIV_PASS" localhost system
+
+echo ""
+echo "=> Terminé ! Si les informations système s'affichent ci-dessus, SNMPv3 est opérationnel."
