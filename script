@@ -7,9 +7,9 @@
 # ------------------------------------------------------------------------------
 # 1. PARAMÈTRES (Modifie ces valeurs - ATTENTION : 8 caractères minimum !)
 # ------------------------------------------------------------------------------
-SNMP_USER="admin_snmp"
-SNMP_AUTH_PASS="AuthPassword123"  # Minimum 8 caractères
-SNMP_PRIV_PASS="PrivPassword123"  # Minimum 8 caractères
+SNMP_USER="admin"
+SNMP_AUTH_PASS="Sio%2025Groupe4"  # Minimum 8 caractères
+SNMP_PRIV_PASS="Sio%2025Groupe4"  # Minimum 8 caractères
 
 # Vérification des droits root
 if [ "$EUID" -ne 0 ]; then
