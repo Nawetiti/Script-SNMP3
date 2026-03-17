@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # ==============================================================================
-# SCRIPT D'INSTALLATION AUTOMATIQUE SNMPv3 (VERSION BLINDÉE)
+# SCRIPT D'INSTALLATION AUTOMATIQUE SNMPv3 (MÉTHODE MODERNE)
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
 # 1. PARAMÈTRES (Modifie ces valeurs - ATTENTION : 8 caractères minimum !)
 # ------------------------------------------------------------------------------
-SNMP_USER="admin_snmp"
-SNMP_AUTH_PASS="AuthPassword123"
-SNMP_PRIV_PASS="PrivPassword123"
+SNMP_USER="admin"
+SNMP_AUTH_PASS="Sio%2025Groupe4"  # Minimum 8 caractères
+SNMP_PRIV_PASS="Sio%2025Groupe4"  # Minimum 8 caractères
 
 # Vérification des droits root
 if [ "$EUID" -ne 0 ]; then
@@ -17,54 +17,48 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-echo "=> Début de l'installation blindée de SNMPv3..."
+echo "=> Début de l'installation moderne de SNMPv3..."
 
 # ------------------------------------------------------------------------------
 # 2. INSTALLATION DES PAQUETS
 # ------------------------------------------------------------------------------
-echo "=> Mise à jour et installation des paquets..."
+echo "=> Mise à jour des dépôts et installation de snmp et snmpd..."
 apt-get update
-# On ajoute psmisc pour s'assurer d'avoir la commande killall
-apt-get install -y snmp snmpd libsnmp-dev psmisc
+apt-get install -y snmp snmpd libsnmp-dev
 
 # ------------------------------------------------------------------------------
-# 3. ARRÊT DU SERVICE ET NETTOYAGE DES PROCESSUS FANTÔMES
+# 3. ARRÊT DU SERVICE ET CRÉATION DE L'UTILISATEUR
 # ------------------------------------------------------------------------------
-echo "=> Arrêt du service et libération du port 161..."
+echo "=> Arrêt du service snmpd..."
 systemctl stop snmpd
-# On force l'arrêt des processus récalcitrants en silence
-killall -9 snmpd 2>/dev/null 
 
-# ------------------------------------------------------------------------------
-# 4. CRÉATION DE L'UTILISATEUR
-# ------------------------------------------------------------------------------
-echo "=> Création de l'utilisateur SNMPv3 sécurisé ($SNMP_USER)..."
+# L'outil net-snmp-create-v3-user configure automatiquement les fichiers de façon sécurisée.
+# -ro (Read-Only), -a SHA (Authentification), -x AES (Chiffrement)
+echo "=> Création de l'utilisateur SNMPv3 sécurisé ($SNMP_USER) avec SHA et AES..."
 net-snmp-create-v3-user -ro -a SHA -A "$SNMP_AUTH_PASS" -x AES -X "$SNMP_PRIV_PASS" "$SNMP_USER"
 
 # ------------------------------------------------------------------------------
-# 5. CONFIGURATION INFAILLIBLE DE L'ÉCOUTE RÉSEAU
+# 4. CONFIGURATION DE L'ÉCOUTE RÉSEAU
 # ------------------------------------------------------------------------------
-echo "=> Configuration de l'écoute stricte sur 0.0.0.0:161..."
+echo "=> Configuration de l'écoute sur toutes les interfaces..."
 CONF_FILE="/etc/snmp/snmpd.conf"
 cp $CONF_FILE "${CONF_FILE}.bak"
 
-# On neutralise TOUTES les lignes agentaddress existantes (majuscules ou minuscules)
-sed -i '/^[[:space:]]*agent[aA]ddress/s/^/#/' $CONF_FILE
+# Désactiver l'écoute locale stricte (127.0.0.1)
+sed -i 's/^agentAddress  udp:127.0.0.1:161/#agentAddress  udp:127.0.0.1:161/g' $CONF_FILE
 
-# On ajoute notre ligne propre à la fin du fichier (avec la bonne orthographe UDP !)
-echo "" >> $CONF_FILE
-echo "# --- CONFIGURATION AUTOMATISÉE ---" >> $CONF_FILE
-echo "agentAddress udp:0.0.0.0:161" >> $CONF_FILE
+# Activer l'écoute sur toutes les interfaces (IPv4 et IPv6)
+sed -i 's/^#agentAddress udp:161,udp6:\[::1\]:161/agentAddress udp:161,udp6:\[::1\]:161/g' $CONF_FILE
 
 # ------------------------------------------------------------------------------
-# 6. DÉMARRAGE ET ACTIVATION DU SERVICE
+# 5. DÉMARRAGE ET ACTIVATION DU SERVICE
 # ------------------------------------------------------------------------------
 echo "=> Démarrage du service snmpd..."
 systemctl start snmpd
-systemctl enable snmpd
+systemctl enable snmpd # S'assure que le service démarre au boot
 
 # ------------------------------------------------------------------------------
-# 7. VÉRIFICATION FINALE AUTOMATIQUE
+# 6. TEST DE LA CONFIGURATION
 # ------------------------------------------------------------------------------
 echo "=> Vérification de l'état du port..."
 sleep 2
@@ -82,7 +76,8 @@ else
     exit 1
 fi
 
-echo "=> Test local de communication SNMPv3 :"
-snmpwalk -v3 -u "$SNMP_USER" -l authPriv -a SHA -A "$SNMP_AUTH_PASS" -x AES -X "$SNMP_PRIV_PASS" localhost system | head -n 3
+# Test avec la commande snmpwalk utilisant les standards modernes (SHA + AES)
+snmpwalk -v3 -u "$SNMP_USER" -l authPriv -a SHA -A "$SNMP_AUTH_PASS" -x AES -X "$SNMP_PRIV_PASS" localhost system
+
 echo ""
-echo "=> Installation terminée ! Tu peux aller l'ajouter dans Zabbix."
+echo "=> Terminé ! Si les informations système s'affichent ci-dessus, SNMPv3 est opérationnel."
