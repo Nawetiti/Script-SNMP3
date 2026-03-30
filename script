@@ -1,55 +1,47 @@
 #!/bin/bash
+# ============================================================
+#  Installation SNMPv3 — simple et rapide
+# ============================================================
 
 SNMP_USER="admin"
-SNMP_AUTH_PASS="Sio%2025Groupe4"  # Minimum 8 caractères
-SNMP_PRIV_PASS="Sio%2025Groupe4"  # Minimum 8 caractères
+SNMP_AUTH_PASS="Sio%2025Groupe4"
+SNMP_PRIV_PASS="Sio%2025Groupe4"
 
-if [ "$EUID" -ne 0 ]; then
-  echo "Erreur : Ce script doit être exécuté en tant que root."
-  exit 1
+# --- Root ---
+[ "$EUID" -ne 0 ] && echo "❌ Exécute ce script en root." && exit 1
+
+# --- Port 161 libre ? ---
+if ss -ulnp | grep -q ":161"; then
+    echo "❌ Le port 161 est déjà utilisé. Libère-le avant de continuer."
+    ss -ulnp | grep ":161"
+    exit 1
 fi
+echo "✅ Port 161 libre."
 
-echo "=> Début de l'installation moderne de SNMPv3..."
+# --- Installation ---
+apt-get update -q
+apt-get install -y -q snmp snmpd libsnmp-dev
 
-echo "=> Mise à jour des dépôts et installation de snmp et snmpd..."
-apt-get update
-apt-get install -y snmp snmpd libsnmp-dev
-
-echo "=> Arrêt du service snmpd..."
+# --- Création utilisateur SNMPv3 ---
 systemctl stop snmpd
-
-# -ro (Read-Only), -a SHA (Authentification), -x AES (Chiffrement)
-echo "=> Création de l'utilisateur SNMPv3 sécurisé ($SNMP_USER) avec SHA et AES..."
 net-snmp-create-v3-user -ro -a SHA -A "$SNMP_AUTH_PASS" -x AES -X "$SNMP_PRIV_PASS" "$SNMP_USER"
 
-echo "=> Configuration de l'écoute sur toutes les interfaces..."
-CONF_FILE="/etc/snmp/snmpd.conf"
-cp $CONF_FILE "${CONF_FILE}.bak"
+# --- Écoute sur toutes les interfaces ---
+sed -i 's|^agentaddress.*|agentaddress udp:0.0.0.0:161|I' /etc/snmp/snmpd.conf
 
-sed -i 's/^agentAddress  udp:127.0.0.1:161/#agentAddress  udp:127.0.0.1:161/g' $CONF_FILE
-
-sed -i 's/^#agentAddress udp:161,udp6:\[::1\]:161/agentAddress udp:161,udp6:\[::1\]:161/g' $CONF_FILE
-
-echo "=> Démarrage du service snmpd..."
-systemctl start snmpd
-systemctl enable snmpd 
-
-echo "=> Vérification de l'état du port..."
+# --- Démarrage ---
+systemctl restart snmpd
+systemctl enable snmpd
 sleep 2
 
+# --- Vérification finale ---
 if ss -ulnp | grep -q "0.0.0.0:161"; then
-    echo "--------------------------------------------------------"
-    echo " ✅ SUCCÈS : Le service écoute parfaitement sur 0.0.0.0:161 !"
-    echo "--------------------------------------------------------"
+    echo "✅ SNMPv3 écoute sur 0.0.0.0:161"
 else
-    echo "--------------------------------------------------------"
-    echo " ❌ ERREUR : Le port 161 n'est pas ouvert correctement."
-    echo " Lance 'sudo systemctl status snmpd' pour voir le problème."
-    echo "--------------------------------------------------------"
+    echo "❌ Le port 161 n'est pas ouvert. Lance : sudo systemctl status snmpd"
     exit 1
 fi
 
-snmpwalk -v3 -u "$SNMP_USER" -l authPriv -a SHA -A "$SNMP_AUTH_PASS" -x AES -X "$SNMP_PRIV_PASS" localhost system
-
-echo ""
-echo "=> Terminé ! Si les informations système s'affichent ci-dessus, SNMPv3 est opérationnel."
+snmpwalk -v3 -u "$SNMP_USER" -l authPriv -a SHA -A "$SNMP_AUTH_PASS" -x AES -X "$SNMP_PRIV_PASS" localhost system \
+    && echo "✅ SNMPv3 opérationnel !" \
+    || echo "⚠️  snmpwalk a échoué, vérifie les logs."
